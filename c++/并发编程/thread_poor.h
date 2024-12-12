@@ -94,7 +94,7 @@ private:
         cv_lock_.notify_all();
         for (auto& td : pool_) {
             if (td.joinable()) {
-                std::cout << "join thread " << td.get_id() << std::endl;
+                //std::cout << "join thread " << td.get_id() << std::endl;
                 td.join();
             }
         }
