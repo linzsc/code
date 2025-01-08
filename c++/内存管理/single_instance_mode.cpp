@@ -1,6 +1,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <thread>
 //利用智能指针解决释放问题
 class SingleAuto
 {
@@ -59,7 +60,7 @@ void test_singleauto()
 
     //可以通过友元函数+删除器，来避免显示地调用析构函数，从而确保智能指针的自动释放，防止程序崩溃
 
-
+    return;
 }
 
 
@@ -129,6 +130,8 @@ std::mutex SingleAutoSafe::s_mutex;
 void test_singleautosafe()
 {
     auto sp1 = SingleAutoSafe::GetInst();
+
+    
     auto sp2 = SingleAutoSafe::GetInst();
     std::cout << "sp1  is  " << sp1 << std::endl;
     std::cout << "sp2  is  " << sp2 << std::endl;
@@ -136,14 +139,18 @@ void test_singleautosafe()
     // delete sp1.get();
 }
 
-
+std::thread mythreads([](){
+    
+}
+);
 
 
 int main(){
-    test_singleauto();
 
+    std::thread mythread1(test_singleauto);     //函数指针
+    std::thread mythread2([](){ test_singleauto(); });
 
-    
+    mythread1.join();
     test_singleautosafe();
     return 0;
 }
