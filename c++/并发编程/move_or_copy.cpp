@@ -14,7 +14,8 @@ public:
 
 int main() {
     TestCopy a;
-    TestCopy b(std::move(a));
+    TestCopy b(std::move(a));//貌似只有调用move函数才会调用移动构造函数
+    
    
     return 0;
 }
