@@ -3,22 +3,30 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
-#include <sys/wait.h>
-#include <signal.h>
+#include <pthread.h>
 
-// 子进程退出信号处理回调函数
-void sigchld_handler(int signum) {
-    // 回收子进程，避免僵尸进程
-    while (waitpid(-1, nullptr, WNOHANG) > 0) {
-        // 使用 WNOHANG 标志不会阻塞，确保父进程能继续运行
-    }
-}
+// 用于传递给线程的结构体
+struct ClientData {
+    int clientSocket;
+    struct sockaddr_in clientAddr;
+};
 
 // 处理客户端的请求
-void handle_client(int clientSocket) {
+void* handle_client(void* arg) {
+    // 获取传递的客户端数据
+    ClientData* data = (ClientData*)arg;
+    int clientSocket = data->clientSocket;
+    struct sockaddr_in clientAddr = data->clientAddr;
+
+    // 打印客户端的 IP 地址和端口
+    char clientIp[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(clientAddr.sin_addr), clientIp, INET_ADDRSTRLEN);
+    std::cout << "客户端 IP: " << clientIp << ", 端口: " << ntohs(clientAddr.sin_port) << std::endl;
+
     char buffer[1024];
     int recvSize;
 
+    // 处理客户端请求
     while ((recvSize = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
         buffer[recvSize] = '\0';  // 以 null 结尾
         std::cout << "收到数据: " << buffer << std::endl;
@@ -33,14 +41,12 @@ void handle_client(int clientSocket) {
 
     // 关闭连接
     close(clientSocket);
+    delete data;  // 释放客户端数据
+    return nullptr;  // 结束线程
 }
 
 // 启动服务器，监听并接受客户端请求
 void start_server() {
-    uint32_t b = 123;
-    uint32_t a = htonl(b);
-    std::cout << b << std::endl;
-    std::cout << a << std::endl;
 
     int serverSocket, clientSocket;
     struct sockaddr_in serverAddr, clientAddr;
@@ -73,9 +79,6 @@ void start_server() {
     }
     std::cout << "服务器已启动，监听端口 12345..." << std::endl;
 
-    // 注册 SIGCHLD 信号处理程序
-    signal(SIGCHLD, sigchld_handler);  // 父进程接收到 SIGCHLD 信号时会调用 sigchld_handler
-
     // 接受客户端连接
     while (true) {
         clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &clientSize);
@@ -87,24 +90,22 @@ void start_server() {
 
         std::cout << "客户端已连接!" << std::endl;
 
-        // 使用 fork 创建子进程来处理客户端请求
-        pid_t pid = fork();  // 创建子进程，相当于同一时间运行两份程序，只是各程序的 pid 不同
+        // 创建 ClientData 结构体并传递给线程
+        ClientData* data = new ClientData;
+        data->clientSocket = clientSocket;
+        data->clientAddr = clientAddr;
 
-        if (pid == -1) {  // 创建失败时返回 -1
-            std::cerr << "创建子进程失败!" << std::endl;
+        // 创建线程来处理客户端请求
+        pthread_t threadId;
+        if (pthread_create(&threadId, nullptr, handle_client, (void*)data) != 0) {
+            std::cerr << "创建线程失败!" << std::endl;
             close(clientSocket);
+            delete data;  // 确保删除分配的内存
             continue;
         }
 
-        if (pid == 0) {  // 子进程部分
-            close(serverSocket);  // 子进程不需要监听套接字
-            handle_client(clientSocket);  // 处理客户端请求
-
-            // 处理完后退出子进程（重要）
-            exit(0); 
-        } else {  // 父进程部分
-            close(clientSocket);  // 父进程不处理此连接，继续监听其他连接
-        }
+        // 分离线程，自动回收线程资源
+        pthread_detach(threadId);
     }
 
     // 关闭监听套接字（通常不会执行到这里）

@@ -27,10 +27,13 @@ void start_client() {
         return;
     }
     std::cout << "成功连接到服务器!" << std::endl;
-
+    
+    while(1){
     // 发送数据
-    const char* message = "你好，服务器！";
-    send(clientSocket, message, strlen(message), 0);
+        const char* message = "你好，服务器！";
+        send(clientSocket, message, strlen(message), 0);
+        sleep(1);
+    }
 
     // 接收数据
     char buffer[1024];

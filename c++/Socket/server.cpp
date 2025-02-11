@@ -24,7 +24,7 @@ void start_server() {
     // 配置服务器地址
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = INADDR_ANY;  // 监听所有接口
-    serverAddr.sin_port = htons(12345);  // 使用端口 12345
+    serverAddr.sin_port = htons(12346);  // 使用端口 12345
 
     // 绑定套接字
     if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
