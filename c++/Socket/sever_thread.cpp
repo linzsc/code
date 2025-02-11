@@ -63,7 +63,11 @@ void start_server() {
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = INADDR_ANY;  // 监听所有接口
     serverAddr.sin_port = htons(12345);  // 使用端口 12345
-
+    
+    /*
+    可以通过插入setsoketopt来设置套接字选项
+    ·
+    */
     // 绑定套接字
     if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
         std::cerr << "绑定失败!" << std::endl;
