@@ -43,7 +43,9 @@ using namespace std;
 class background_task {
 public:
     string s; 
+    // 重载函数调用运算符，用于输出字符串
     void operator()(std::string str) {
+        // 输出字符串
         std::cout << "str is " << str << std::endl;
     }   
     background_task  operator+(const std::string& ss){  
@@ -100,7 +102,7 @@ int main() {
     {
         std::thread t(task);  // 创建一个线程
 
-        t.join();  // 将线程与当前线程分离
+        t.detach();  // 将线程与当前线程分离
         std::cout << "{} thread continues execution" << std::endl;
         std::this_thread::sleep_for(std::chrono::seconds(3));
         std::cout << "{} thread ends" << std::endl;

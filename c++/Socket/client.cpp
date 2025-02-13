@@ -27,21 +27,27 @@ void start_client() {
         return;
     }
     std::cout << "成功连接到服务器!" << std::endl;
-    
-    while(1){
-    // 发送数据
-        const char* message = "你好，服务器！";
-        send(clientSocket, message, strlen(message), 0);
-        sleep(1);
+    std::string message;
+    while(1)
+    {
+        std::getline(std::cin, message);
+        // 发送数据
+        //const char* message = "你好，服务器！";
+        send(clientSocket, message.c_str(), message.length(), 0);
+        
+
+         // 接收数据
+        char buffer[1024];
+        int recvSize = recv(clientSocket, buffer, sizeof(buffer), 0);
+        if (recvSize > 0) {
+            buffer[recvSize] = '\0';  // 添加 null 结尾
+            std::cout << "服务器回应: " << buffer << std::endl;
+        }
+        
     }
 
-    // 接收数据
-    char buffer[1024];
-    int recvSize = recv(clientSocket, buffer, sizeof(buffer), 0);
-    if (recvSize > 0) {
-        buffer[recvSize] = '\0';  // 添加 null 结尾
-        std::cout << "服务器回应: " << buffer << std::endl;
-    }
+   
+  
 
     // 关闭连接
     close(clientSocket);
@@ -63,3 +69,10 @@ int main() {
     return 0;
 }
 
+/*
+使用const char *massage = "你好，服务器！";
+send(clientSocket, message, strlen(message), 0);
+recv(clientSocket, buffer, sizeof(buffer), 0);
+就可以避免内容被截断
+
+*/

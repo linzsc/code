@@ -29,8 +29,10 @@ void producer() {
 void consumer() {
     while (true) {
         std::unique_lock<std::mutex> lock(mtx);
-        cv.wait(lock, [] { return !dataQueue.empty() ||done; });
-
+        //阻塞等待条件变量，直到条件变量满足
+        cv.wait(lock, [] { return !dataQueue.empty() ||done; });    
+        // notify_all或notify_one只是告诉线程条件变量可能发生变化了，但线程是否真的要被唤醒，还是由wait函数的第二个参数决定
+        //cv.wait(lock, !dataQueue.empty() ||done); 后面必须是一个可调用的对象，lambda,函数指针，函数对象
         while (!dataQueue.empty()) {
             int data = dataQueue.front();
             dataQueue.pop();
