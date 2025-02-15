@@ -8,15 +8,21 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "thread_poor.h"
+#include <list>
+#include <map>
+#include "message.h"
 #define MAX_EVENTS 10
 #define PORT 12345
+#define BUFF_SIZE 1024
 
 // 回调函数类型
 typedef void (*CallbackFunction)(int fd, uint32_t events);
 
+// 在线用户列表
 
+std::map<std::string, int>onlineMap;
 
-ThreadPool& thread_pool = ThreadPool::instance(4);  // 使用线程池，线程数设为 4
+ThreadPool& thread_pool = ThreadPool::instance(200);  // 使用线程池，线程数设为 4
 
 // Epoll Reactor 服务器
 class EpollReactor {
@@ -73,37 +79,50 @@ private:
 };
 
 EpollReactor server;
-/*
-void handleClientRead(int fd, uint32_t events) {//没有考虑buffer大小的问题
-    char buffer[512];
-    int bytesRead = read(fd, buffer, sizeof(buffer) - 1);
-    
-    if (bytesRead > 0) {
-        buffer[bytesRead] = '\0';
-        std::cout << "Received from client: " << buffer << std::endl;
 
-        // 回应客户端数据
-        write(fd, "Message received", 17);
-    } else if (bytesRead == 0) {
-        std::cout << "Client disconnected." << std::endl;
-        close(fd); // 客户端断开连接，关闭文件描述符
-    } else {
-        std::cerr << "Read error: " << strerror(errno) << std::endl;
-    }
+
+void sendToClient(std::string & message) {
+    Message msg;
+    msg.deserialize(message);
+    std::cout << "消息内容：" << msg.get_content() << std::endl;
+    send(onlineMap[msg.get_recv()], msg.get_content().c_str(), msg.get_content().length(), 0);
+
 }
-*/
 void handleClientRead(int fd, uint32_t events) {
     // 将数据读取和写入操作都交给线程池处理
     thread_pool.commit([fd]() {
-        char buffer[512];
+        char buffer[BUFSIZ];
         int bytesRead = read(fd, buffer, sizeof(buffer) - 1);
-
+        std::string tmp=std::string(buffer);
         if (bytesRead > 0) {
             buffer[bytesRead] = '\0';
-            std::cout << "Received from client: " << buffer << std::endl;
+            //std::cout << "Received from client: " << buffer << std::endl;
 
-            // 处理完数据后，将响应写回客户端
-            write(fd, "Message received", 17);
+            // 处理数据
+
+            //如果是上线，则添加到在线列表
+            if (buffer[0] == '1') { 
+
+                std::cout << "上线" << std::endl;
+                // 添加到在线列表,除去首位的1
+                std::string full(buffer);  // 将整个 buffer 转换为字符串
+                std::string result = full.substr(1); 
+                onlineMap[result] = fd;
+                
+               std::cout<<result<<"   "<<fd<<std::endl;
+            }else{
+                //sendToClient(tmp);
+                Message msg = Message::deserialize(tmp);
+                std::cout << "Received from client: " << tmp << std::endl;
+                std::cout << "消息内容：" << msg.get_content() << std::endl;
+                send(onlineMap[msg.get_recv()], tmp.c_str(), tmp.length(), 0);
+            }
+                
+            
+            // 处理完数据，并转发给其他客户端
+            //sendToClient(buffer);
+
+            //write(fd, "Message received", 17);
         } else if (bytesRead == 0) {
             std::cout << "Client disconnected." << std::endl;
             close(fd); // 客户端断开连接，关闭文件描述符
@@ -160,24 +179,24 @@ void handleStdin(int fd, uint32_t events) {
 }
 
 int main() {
-    
     if (!server.init()) {
         return 1;
     }
-
     // 创建监听套接字
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1) {
         std::cerr << "Socket creation failed: " << strerror(errno) << std::endl;
         return 1;
     }
+
+    // 设置 SO_REUSEADDR 选项，允许重用本地地址和端口
     int opt = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
         std::cerr << "设置 SO_REUSEADDR 失败!" << std::endl;
         close(server_fd);
         return 0;
     }
-
+    
     // 设置服务器地址
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;

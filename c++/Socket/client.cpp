@@ -34,7 +34,7 @@ void start_client() {
         // 发送数据
         //const char* message = "你好，服务器！";
         send(clientSocket, message.c_str(), message.length(), 0);
-        
+        printf("发送成功\n");
 
          // 接收数据
         char buffer[1024];

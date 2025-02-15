@@ -6,7 +6,7 @@
 #include <cstring>
 #include <sys/epoll.h>
 #define MAX_CLIENTS 10
-#define BUFFER_SIZE 2
+#define BUFFER_SIZE 1024
 /*
 epoll 实现多客户端通信
 epoll的API接口函数主要有以下几个：

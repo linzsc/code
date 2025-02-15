@@ -62,7 +62,8 @@
         "variant": "cpp",
         "fstream": "cpp",
         "list": "cpp",
-        "cstring": "cpp"
+        "cstring": "cpp",
+        "map": "cpp"
     },
     "Codegeex.RepoIndex": true
 }
