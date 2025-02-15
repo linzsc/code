@@ -8,8 +8,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "thread_poor.h"
-#include <list>
 #include <map>
+#include "http_header.h"
 #include "message.h"
 #define MAX_EVENTS 10
 #define PORT 12345
@@ -20,9 +20,10 @@ typedef void (*CallbackFunction)(int fd, uint32_t events);
 
 // 在线用户列表
 
-std::map<std::string, int>onlineMap;
+std::map<std::string, int>online_name;
+std::map<int,std::string>online_fd;
 
-ThreadPool& thread_pool = ThreadPool::instance(200);  // 使用线程池，线程数设为 4
+ThreadPool& thread_pool = ThreadPool::instance(200);  // 使用线程池
 
 // Epoll Reactor 服务器
 class EpollReactor {
@@ -85,9 +86,54 @@ void sendToClient(std::string & message) {
     Message msg;
     msg.deserialize(message);
     std::cout << "消息内容：" << msg.get_content() << std::endl;
-    send(onlineMap[msg.get_recv()], msg.get_content().c_str(), msg.get_content().length(), 0);
+    send(online_name[msg.get_recv()], msg.get_content().c_str(), msg.get_content().length(), 0);
 
 }
+
+
+void handleClientRead(int fd, uint32_t events) {
+    thread_pool.commit([fd]() {
+        char buffer[BUFSIZ];
+        std::string full_message;
+
+        while (true) {
+            int bytesRead = read(fd, buffer, sizeof(buffer) - 1);
+            if (bytesRead <= 0) {
+                if (bytesRead == 0) {
+                    std::cout << "Client disconnected." << std::endl;
+                    if (online_fd.find(fd) != online_fd.end()) {
+                        online_name.erase(online_fd[fd]);
+                        online_fd.erase(fd);
+                    }
+                    close(fd);
+                } else if (bytesRead < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+                    std::cerr << "Read error: " << strerror(errno) << std::endl;
+                }
+                break;
+            }
+            buffer[bytesRead] = '\0';
+            full_message.append(buffer, bytesRead);
+        }
+
+        if (full_message.empty()) {
+            return;
+        }
+
+        // 如果是第一次接收消息，认为是客户端名字
+        if (online_fd.find(fd) == online_fd.end()) {
+            std::cout << "Client name: " << full_message << std::endl;
+            online_name[full_message] = fd;
+            online_fd[fd] = full_message;
+        } else {
+            // 按行分割消息
+            Message msg = Message::deserialize(full_message);
+            std::cout << "Received from client: " << full_message << std::endl;
+            std::cout << "消息内容：" << msg.get_content() << std::endl;
+            send(online_name[msg.get_recv()], full_message.c_str(), full_message.length(), 0);
+        }
+    });
+}
+/*
 void handleClientRead(int fd, uint32_t events) {
     // 将数据读取和写入操作都交给线程池处理
     thread_pool.commit([fd]() {
@@ -107,15 +153,17 @@ void handleClientRead(int fd, uint32_t events) {
                 // 添加到在线列表,除去首位的1
                 std::string full(buffer);  // 将整个 buffer 转换为字符串
                 std::string result = full.substr(1); 
-                onlineMap[result] = fd;
-                
+
+                //建立双向映射，快速查找和删除
+                online_name[result] = fd;
+                online_fd[fd] = result;
                std::cout<<result<<"   "<<fd<<std::endl;
             }else{
                 //sendToClient(tmp);
                 Message msg = Message::deserialize(tmp);
                 std::cout << "Received from client: " << tmp << std::endl;
                 std::cout << "消息内容：" << msg.get_content() << std::endl;
-                send(onlineMap[msg.get_recv()], tmp.c_str(), tmp.length(), 0);
+                send(online_name[msg.get_recv()], tmp.c_str(), tmp.length(), 0);
             }
                 
             
@@ -125,6 +173,9 @@ void handleClientRead(int fd, uint32_t events) {
             //write(fd, "Message received", 17);
         } else if (bytesRead == 0) {
             std::cout << "Client disconnected." << std::endl;
+            //在线列表删除该套接字
+            online_name.erase(online_fd[fd]);
+            online_fd.erase(fd);
             close(fd); // 客户端断开连接，关闭文件描述符
         } else {
             std::cerr << "Read error: " << strerror(errno) << std::endl;
@@ -132,7 +183,7 @@ void handleClientRead(int fd, uint32_t events) {
     });
 }
 
-
+*/
 
 // 处理客户端连接的回调函数
 void handleNewConnection(int fd, uint32_t events) {
@@ -153,6 +204,10 @@ void handleNewConnection(int fd, uint32_t events) {
     // 注册客户端文件描述符的读事件
     // 当客户端发送数据时触发回调
     server.addFd(client_fd, EPOLLIN | EPOLLET, handleClientRead);
+
+    //获取用户名字，
+    const char* request_name = "Please send your name"; 
+    write(client_fd, request_name, strlen(request_name));
 }
 
 

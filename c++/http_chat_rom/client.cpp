@@ -7,6 +7,7 @@
 #include <mutex>
 #include "message.h"
 
+char* client_name; // 客户端名字
 void receive_data(int clientSocket) {
     char buffer[1024];
     while (true) {
@@ -18,7 +19,7 @@ void receive_data(int clientSocket) {
         //buffer[recvSize] = '\0';  // 添加 null 结尾
         Message msg = Message::deserialize(buffer);
         std::cout <<msg.get_sender()+": "<< msg.get_content() << std::endl;
-        std::cout << msg.timestamp << std::endl;
+        std::cout << msg.get_timestamp()<< std::endl;
     }
 }
 
@@ -29,10 +30,26 @@ void send_data(int clientSocket) {
         if (message == "exit") {
             break;
         }
-        Message msg(MessageType::PrivateChat, message, "aaaa", "bbbb");
+        Message msg(MessageType::PrivateChat,  client_name, "bbbb",message);
         send(clientSocket, msg.serialize().c_str(), msg.serialize().length(), 0);
         std::cout << "发送成功\n";
     }
+}
+
+void send_name(int clientSocket) {
+    char buffer[1024];
+    int recvSize = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+    if (recvSize <= 0) {
+        std::cerr << "连接已关闭或接收失败!" << std::endl;
+        close(clientSocket);
+        return;
+    }
+    std::string name;
+    std::cout << "请输入你的名字: ";
+    std::cin >> name;
+    client_name= new char[name.length() + 1];
+    strcpy(client_name, name.c_str());
+    send(clientSocket, name.c_str(), name.length(), 0);
 }
 
 void start_client() {
@@ -58,9 +75,14 @@ void start_client() {
         return;
     }
     std::cout << "成功连接到服务器!" << std::endl;
-    send(clientSocket, "1aaaa", strlen("1aaaa"), 0);
-    printf("Iam aaaa\n");
+    //send(clientSocket, "1aaaa", strlen("1aaaa"), 0);
+    //printf("Iam aaaa\n");
     
+
+    send_name(clientSocket);
+    //接受服务器发来的名字请求，并发送给服务器自己的名字
+
+
     // 创建接收和发送线程
     std::thread recvThread(receive_data, clientSocket);
     std::thread sendThread(send_data, clientSocket);

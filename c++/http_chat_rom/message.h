@@ -12,23 +12,13 @@ enum class MessageType {
 
 
 struct Message {
-    MessageType type;        // 消息类型
-    std::string sender;      // 发送者用户名
-    std::string receiver;    // 接收者用户名（仅私聊时有效）
-    std::string content;     // 消息内容
-    std::string timestamp;   // 时间戳
 
     // 构造函数
     Message(){
 
     }
-    Message(MessageType t, const std::string& c,const std::string& s, const std::string& r,const std::string& Time)
-        : type(t), sender(s), receiver(r), content(c) ,timestamp(Time){
-        
-       
-    }
 
-    Message(MessageType t, const std::string& c,const std::string& s, const std::string& r)
+    Message(MessageType t,const std::string& s, const std::string& r, const std::string& c)
         : type(t), sender(s), receiver(r), content(c) {
         // 获取当前时间戳
         auto now = std::chrono::system_clock::now();
@@ -46,6 +36,9 @@ struct Message {
     }
     std::string get_content() const {
         return content;
+    }
+    std ::string get_timestamp() const {
+        return timestamp;
     }
     // 序列化消息为字符串
     std::string serialize() const {
@@ -72,6 +65,13 @@ struct Message {
         std::getline(iss, Time);
     
         t = std::stoi(type);
-        return Message(static_cast<MessageType>(t), c, s, r); // 注意构造函数的参数顺序
+        return Message(static_cast<MessageType>(t),  s, r, c); // 注意构造函数的参数顺序
     }
+
+private:
+    MessageType type;      // 消息类型
+    std::string sender;    // 发送者用户名
+    std::string receiver;  // 接收者用户名 ()
+    std::string content;   // 消息内容
+    std::string timestamp; // 时间戳
 };
