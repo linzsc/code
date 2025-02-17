@@ -49,7 +49,7 @@ struct ProtocolHeader {
         memcpy(buffer + sizeof(magic), &version, sizeof(version));
         memcpy(buffer + sizeof(magic) + sizeof(version), &msg_type, sizeof(msg_type));
         memcpy(buffer + sizeof(magic) + sizeof(version) + sizeof(msg_type), &body_len, sizeof(body_len));
-        printf("http_head_buffer:  %s\n",buffer);
+        //printf("http_head_buffer:  %s\n",buffer);
         return std::string(buffer,sizeof(buffer));
     }
 

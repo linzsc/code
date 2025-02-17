@@ -24,6 +24,9 @@ typedef void (*CallbackFunction)(int fd, uint32_t events);
 
 std::map<std::string, int>online_name;
 std::map<int,std::string>online_fd;
+std::map<std::string,std::string>Group_member;
+std::unordered_map<std::string, std::string> user_db;
+
 
 ThreadPool& thread_pool = ThreadPool::instance(200);  // 使用线程池
 
@@ -84,19 +87,6 @@ private:
 EpollReactor server;
 
 
-void sendToClient(int fd,std::string & message) {//后续还需要区别群聊和私聊，目前只是私聊
-    //验证在线列表中是否由该用户
-    Message msg;
-    msg.deserialize(message);
-    std::cout << "消息内容：" << msg.get_content() << std::endl;
-    if(online_fd[fd]!=msg.get_recv()||online_fd.find(fd)==online_fd.end()){
-        std::cout<<"该用户为非法用户！！不在在线列表中"<<std::endl;
-        return;
-    }
-    
-    send(online_name[msg.get_recv()], msg.get_content().c_str(), msg.get_content().length(), 0);
-
-}
 
 
 
@@ -124,32 +114,65 @@ struct ClientContext {
 };
 
 
-// 全局客户端上下文映射
-std::unordered_map<std::string, std::string> user_db;
+
+
 std::unordered_map<int, ClientContext> client_contexts;
+
+
+std::string create_response(int fd, const std::string& status_code, const std::string& content_type, const std::string& body){
+    ProtocolHeader  header;
+    header.version=1;
+    if(status_code=="100"){
+        header.setMessageType(ProtocolHeader::MsgType::HTTP_RESPONSE);
+    }
+    else if(status_code=="101"){
+        header.setMessageType(ProtocolHeader::MsgType::CHAT_RESPONSE);
+    }
+
+    std::string response = "HTTP/1.1 " + status_code + "\r\n"; // 状态行
+    response += "Content-Type: " + content_type + "\r\n";        // 内容类型                                          // 空行，表示响应头结束
+    response += "Content-Length: "+std::to_string(body.size())+"\r\n\r\n";
+    response += body;
+    header.setBodyLength(response.size());
+    response=header.serialize()+response;
+
+    std::cout<<"<create_response: >\n"+response<<std::endl;
+    return response;
+} 
+
+void sendToClient(int fd,std::string & message) {//后续还需要区别群聊和私聊，目前只是私聊
+    std::cout<<"\n\nsendToClient: "<<std::endl;
+    Message msg=Message::deserialize(message);
+    std::string response=create_response(fd,"101","text/html",message);
+
+    if(online_fd[fd]!=msg.get_recv()||online_fd.find(fd)==online_fd.end()){
+        std::cout<<msg.get_recv()<<"该用户为非法用户！！不在在线列表中"<<std::endl;
+        return;
+    }
+    
+    send(online_name[msg.get_recv()],response.c_str(), response.length(), 0);
+
+}
 
 void sendHttpResponse(int fd, const std::string& status_code, const std::string& content_type, const std::string& body) {
     // 构造 HTTP 响应头
     ProtocolHeader  header;
     header.version=1;
-    header.setMessageType(ProtocolHeader::MsgType::HTTP_RESPONSE);
-    
-    std::string response=response += "HTTP/1.1 " + status_code ; // 状态行
-    if(status_code=="200"){
-        response+="ok \r\n";
+    if(status_code=="100"){
+        header.setMessageType(ProtocolHeader::MsgType::HTTP_RESPONSE);
     }
-    else{
-        response+="fail \r\n";
+    else if(status_code=="101"){
+        header.setMessageType(ProtocolHeader::MsgType::CHAT_RESPONSE);
     }
-    response += +"Content-Type: " + content_type + "\r\n";        // 内容类型
-    response += "Content-Length: " + std::to_string(body.size()) + "\r\n"; // 内容长度
-    response += "Connection: close\r\n";                          // 关闭连接
-    response += "\r\n";                                           // 空行，表示响应头结束
+
+    std::string response = "HTTP/1.1 " + status_code + "\r\n"; // 状态行
+    response += "Content-Type: " + content_type + "\r\n";        // 内容类型                                          // 空行，表示响应头结束
 
     // 构造 HTTP 响应体
     response += body;
     header.setBodyLength(response.size());
     response=header.serialize()+response;
+    std::cout<<"sendHttpResponse : "<<response<<std::endl;
     // 将响应发送到客户端
     if (send(fd, response.c_str(), response.size(), 0) < 0) {
         std::cerr << "Failed to send HTTP response." << std::endl;
@@ -157,19 +180,21 @@ void sendHttpResponse(int fd, const std::string& status_code, const std::string&
 }
 
 
-void broadcastMessage(int fd,std::string content){
-
+void broadcastMessage(int fd,std::string message){
+    Message msg=Message::deserialize(message);
+    std::string response=create_response(fd,"101","text/html",message);
+    for(auto it=online_fd.begin();it!=online_fd.end();it++){
+        if(it->first==fd){
+            continue;
+        }
+        send(it->first, response.c_str(), response.length(), 0);
+    }
 }
 
 
 void user_register(int fd, std::string ctx_body) {
-    //std::cout << "??????????????????"  << std::endl;
-
-    SimpleJSONParser parser(ctx_body);
-    std::map<std::string, std::string> userData = parser.parse();
-
-    std::string username = userData["username"];
-    std::string password = userData["password"];
+   
+    std::string username="linz",password="0128";
     // 模拟注册进入数据库
     if(user_db.find(username)==user_db.end()){
         user_db[username] = password;
@@ -177,21 +202,16 @@ void user_register(int fd, std::string ctx_body) {
     else{
         sendHttpResponse(fd, "400", "application/json", "{\"status\":\"这个id已经注册过了！\"}");
     }
-    //user_db[username] = password;
-
+ 
     std::cout << "Registered user: " << username << ", password: " << password << std::endl;
 
-    sendHttpResponse(fd, "200", "application/json", "{\"status\":\"ok\"}");
+    
 }
 
 void user_login(int fd, std::string ctx_body)
 {
-    SimpleJSONParser parser(ctx_body);
-    std::map<std::string, std::string> userData = parser.parse();
-
-    std::string username = userData["username"];
-    std::string password = userData["password"];
-
+    
+    std::string username="linz",password="0128";
     // 模拟登录验证
     if (user_db.find(username) != user_db.end() && user_db[username] == password)
     {
@@ -199,24 +219,82 @@ void user_login(int fd, std::string ctx_body)
         online_name[username] = fd;
         online_fd[fd] = username;
         std::cout<<username<<"成功登录\n";
-        sendHttpResponse(fd, "200", "text/html", "Login successful");
+        //sendHttpResponse(fd, "200", "text/html", "Login successful");
     }
     else
     {
-        sendHttpResponse(fd, "401", "text/html", "Unauthorized");
+        //sendHttpResponse(fd, "401", "text/html", "Unauthorized");
     }
 }
 
 
+
+void onMessage(int fd, ProtocolHeader ctx_header, std::string ctx_body) {
+    ctx_header.print();
+    std::cout << "body: " << ctx_body << std::endl;
+    
+    try {
+        printf("status:%d\n", ctx_header.msg_type);
+        switch (ctx_header.msg_type) {
+            case ProtocolHeader::MsgType::HTTP_REQUEST: {
+                // 解析 HTTP 请求
+                size_t first_space = ctx_body.find(' ');
+                size_t second_space = ctx_body.find(' ', first_space + 1);
+
+                if (first_space != std::string::npos && second_space != std::string::npos) {
+                    std::string request_method = ctx_body.substr(0, first_space);
+                    std::string request_path = ctx_body.substr(first_space + 1, second_space - first_space - 1);
+
+                    std::cout << "\n\n\n\n" << request_path << '\n' << std::endl;
+                    // std::transform(request_path.begin(), request_path.end(), request_path.begin(), ::tolower);
+
+                    // 提取 JSON 数据
+                    std::string json_data;
+                    size_t body_start = ctx_body.find("\r\n\r\n");
+                    if (body_start != std::string::npos) {
+                        body_start += 4; // 跳过 "\r\n\r\n"
+                        json_data = ctx_body.substr(body_start, ctx_body.size() - body_start);
+                    } else {
+                        sendHttpResponse(fd, "400", "text/html", "Bad Request: Missing body");
+                        return;
+                    }
+
+                    // 处理 HTTP 请求路径
+                    if (request_path == "/login") {
+                        user_login(fd, json_data);
+                    } else if (request_path == "/register") {
+                        user_register(fd, json_data);
+                    } else if (request_path.substr(0, 8) == "/static/") {
+                        std::string resource = request_path.substr(8);
+                        sendHttpResponse(fd, "200", "text/html", "<html><body><h1>Static Resource</h1></body></html>");
+                    } else {
+                        sendHttpResponse(fd, "404", "text/html", "Not Found");
+                    }
+                } else {
+                    sendHttpResponse(fd, "400", "text/html", "Bad Request");
+                }
+                break;
+            }
+            case ProtocolHeader::MsgType::CHAT_MESSAGE: {
+                std::cout << "message body: " << ctx_body << std::endl;
+                sendToClient(fd, ctx_body);
+                break;
+            }
+           
+            default:
+                std::cerr << "Unknown message type: " << static_cast<int>(ctx_header.msg_type) << std::endl;
+                break;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error in onMessage: " << e.what() << std::endl;
+        try {
+            close(fd);
+        } catch (...) {
+            std::cerr << "Failed to close file descriptor." << std::endl;
+        }
+    }
+}
 /*
-下一步：
-实现消息转发
-优化onMessage函数，使ctx_body只有内容而没有前面的信息
-实现服务器的的sendHttpResponse函数
-
-
-*/
-
 void onMessage(int fd, ProtocolHeader ctx_header, std::string ctx_body) {
     ctx_header.print();
     std::cout << "body: " << ctx_body << std::endl;
@@ -226,13 +304,14 @@ void onMessage(int fd, ProtocolHeader ctx_header, std::string ctx_body) {
         switch (ctx_header.msg_type) {
             case ProtocolHeader::MsgType::HTTP_REQUEST: {
                 // 解析 HTTP 请求
-                std::regex path_regex(R"((^\w+) /([^ ]+) HTTP/\d+\.\d+)");
+                //std::regex path_regex(R"((^\w+) /([^ ]+) HTTP/\d+\.\d+)");
+                std::regex path_regex(R"(^(\S+) (\S+) HTTP/\d+\.\d+)");
                 std::smatch matches;
                 if (std::regex_search(ctx_body, matches, path_regex)) {
                     std::string request_method = matches[1];
                     std::string request_path = matches[2];
-                    std::cout<<"\n\n\n\n"+request_path+'\n'<<std::endl;
-                    std::transform(request_path.begin(), request_path.end(), request_path.begin(), ::tolower);
+                    //std::cout<<"\n\n\n\n"+request_path+'\n'<<std::endl;
+                    //std::transform(request_path.begin(), request_path.end(), request_path.begin(), ::tolower);
 
 
                     // 提取 JSON 数据
@@ -249,11 +328,11 @@ void onMessage(int fd, ProtocolHeader ctx_header, std::string ctx_body) {
 
                     
                     // 处理 HTTP 请求路径
-                    if (request_path == "login") {
+                    if (request_path == "/login") {
                         user_login(fd, json_data);
-                    } else if (request_path == "register") {
+                    } else if (request_path == "/register") {
                         user_register(fd, json_data);
-                    } else if (request_path.rfind("static/", 0) == 0) {
+                    } else if (request_path.rfind("/static/", 0) == 0) {
                         std::string resource = request_path.substr(8);
                         sendHttpResponse(fd, "200", "text/html", "<html><body><h1>Static Resource</h1></body></html>");
                     } else {
@@ -299,6 +378,149 @@ void onMessage(int fd, ProtocolHeader ctx_header, std::string ctx_body) {
         }
     }
 }
+*/
+//std::unordered_map<int, ClientContext> client_contexts;
+
+
+
+void handleClientRead(int fd, uint32_t events) {
+    if (client_contexts.find(fd) == client_contexts.end()) {
+        client_contexts[fd] = ClientContext();
+    }
+
+    ClientContext& ctx = client_contexts[fd];
+
+    while (true) {
+        char chunk[4096];
+        ssize_t bytesRead = read(fd, chunk, sizeof(chunk));
+
+        if (bytesRead <= 0) {
+            if (bytesRead == 0) {
+                std::cout << "Client disconnected." << std::endl;
+                client_contexts.erase(fd);
+                close(fd);
+                return;
+            } else {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    // 缓冲区暂时没有数据，退出循环
+                    break;
+                } else {
+                    std::cerr << "Read error: " << strerror(errno) << std::endl;
+                    client_contexts.erase(fd);
+                    close(fd);
+                    return;
+                }
+            }
+        }
+
+        // 累积到缓冲区
+        memcpy(ctx.buffer + ctx.buffer_pos, chunk, bytesRead);
+        ctx.buffer_pos += bytesRead;
+
+        // 处理缓冲区中的数据
+        while (ctx.buffer_pos >= sizeof(ProtocolHeader)) {
+            ProtocolHeader header;
+            memcpy(&header, ctx.buffer, sizeof(header));
+
+            // 校验魔数和版本
+            if (header.magic != ProtocolHeader::MAGIC || header.version != 1) {
+                std::cerr << "Invalid protocol header." << std::endl;
+                client_contexts.erase(fd);
+                close(fd);
+                return;
+            }
+
+            size_t body_len = header.body_len;
+            size_t message_size = sizeof(header) + body_len;
+
+            // 检查缓冲区是否有足够的数据
+            if (ctx.buffer_pos >= message_size) {
+                std::string body(reinterpret_cast<char*>(ctx.buffer) + sizeof(header), body_len);
+                onMessage(fd, header, body);
+
+                // 移除已处理的数据
+                size_t remaining = ctx.buffer_pos - message_size;
+                if (remaining > 0) {
+                    memmove(ctx.buffer, ctx.buffer + message_size, remaining);
+                }
+                ctx.buffer_pos = remaining;
+            } else {
+                // 数据不足，等待更多数据
+                break;
+            }
+        }
+    }
+}
+/*
+
+void handleClientRead(int fd, uint32_t events) {
+    thread_pool.commit([fd]() {
+        if (client_contexts.find(fd) == client_contexts.end()) {
+            client_contexts[fd] = ClientContext();
+        }
+
+        ClientContext& ctx = client_contexts[fd];
+        int totalRead = 0;
+
+        while (true) {
+            // 读取数据到缓冲区
+            char chunk[4096];
+            int bytesRead = read(fd, chunk, sizeof(chunk));
+
+            if (bytesRead <= 0) {
+                if (bytesRead == 0) {
+                    std::cout << "Client disconnected." << std::endl;
+                } else {
+                    std::cerr << "Read error: " << strerror(errno) << std::endl;
+                }
+                client_contexts.erase(fd);
+                break;
+            }
+
+            // 累积到缓冲区
+            memcpy(ctx.buffer + ctx.buffer_pos, chunk, bytesRead);
+            ctx.buffer_pos += bytesRead;
+
+            // 处理缓冲区中的数据
+            while (ctx.buffer_pos >= sizeof(ProtocolHeader)) {
+                ProtocolHeader header;
+                memcpy(&header, ctx.buffer, sizeof(header));
+
+                // 校验魔数和版本
+                if (header.magic != ProtocolHeader::MAGIC || header.version != 1) {
+                    std::cerr << "Invalid protocol header." << std::endl;
+                    client_contexts.erase(fd);
+                    close(fd);
+                    return;
+                }
+
+                size_t body_len = header.body_len;
+                size_t message_size = sizeof(header) + body_len;
+
+                // 检查缓冲区是否有足够的数据
+                if (ctx.buffer_pos >= message_size) {
+                    // 提取消息体
+                    std::string body(ctx.buffer + sizeof(header), body_len);
+
+                    // 处理消息
+                    onMessage(fd, header, body);
+
+                    // 移除已处理的数据
+                    size_t remaining = ctx.buffer_pos - message_size;
+                    if (remaining > 0) {
+                        memmove(ctx.buffer, ctx.buffer + message_size, remaining);
+                    }
+                    ctx.buffer_pos = remaining;
+                } else {
+                    // 数据不足，等待更多数据
+                    break;
+                }
+            }
+        }
+    });
+}
+    */
+/*
 void handleClientRead(int fd, uint32_t events) {
     thread_pool.commit([fd]() {
         if (client_contexts.find(fd) == client_contexts.end()) {
@@ -428,6 +650,8 @@ void handleClientRead(int fd, uint32_t events) {
         }
     });
 }
+
+*/
 /*
 void handleClientRead(int fd, uint32_t events) {
     thread_pool.commit([fd]() {

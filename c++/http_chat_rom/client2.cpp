@@ -52,10 +52,27 @@ void receive_data(int clientSocket) {
                 std::cerr << "连接已关闭或接收失败!" << std::endl;
                 break;
             }
-            // 处理消息体
-            Message msg = Message::deserialize(std::string(body.begin(), body.end()));
-            std::cout << "[" << msg.get_sender() << "]: " << msg.get_content() << std::endl;
-            std::cout << "Message Timestamp: " << msg.get_timestamp() << std::endl;
+            // 分情况处理处理消息体
+            if(header.msg_type == ProtocolHeader::MsgType::HTTP_RESPONSE){
+
+            }
+            else if (header.msg_type == ProtocolHeader::MsgType::CHAT_RESPONSE)
+            {
+                
+                std::string body_str(body.begin(), body.end());
+                size_t body_len = body_str.find("\r\n\r\n");
+                Message msg = Message::deserialize(std::string(body.begin()+body_len+4, body.end()));
+                if(msg.type == MessageType::GroupChat){
+                    std::cout << "[gropupchat Sender:<" << msg.get_sender() << ">]: " << msg.get_content() << std::endl;
+                }
+                else if(msg.type == MessageType::PrivateChat){
+                    std::cout << "[Sender:<" << msg.get_sender() << ">]: " << msg.get_content() << std::endl;
+                }
+                
+                std::cout << "Message Timestamp:" << msg.get_timestamp() << std::endl;
+               
+            }
+            
             state = 0;
         }
     }
@@ -68,7 +85,7 @@ void sendHttpRequest(int cfd, const std::string& method, const std::string& path
     oss << "Content-Type: application/json\r\n";
     oss << "Content-Length: " << body.size() << "\r\n";
     oss << "\r\n";
-    oss << body;
+    oss << body; 
 
     std::string request = oss.str();//这是body部分
     std::cout<<request<<std::endl;
@@ -91,7 +108,7 @@ void send_data(int clientSocket) {
         if (message == "exit") {
             break;
         }
-        Message msg(MessageType::PrivateChat, client_name, "bbbb", message);
+        Message msg(MessageType::GroupChat, client_name, "linz", message);
         std::string body = msg.serialize();
         ProtocolHeader header;
         header.setMessageType(ProtocolHeader::MsgType::CHAT_MESSAGE);
@@ -149,7 +166,7 @@ void start_client() {
 
     std::thread recvThread(receive_data, clientSocket);
     std::thread sendThread(send_data, clientSocket);
-    
+
     user_regist(clientSocket);
     user_login(clientSocket);
     //send_name(clientSocket);

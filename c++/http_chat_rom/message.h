@@ -28,16 +28,16 @@ struct Message {
         oss << std::put_time(&tm_now, "%Y-%m-%d %H:%M:%S");
         timestamp = oss.str();
     }
-    std::string get_sender() const {
+    const std::string& get_sender() const {
         return sender;
     }
-    std::string get_recv() const{
+    const std::string& get_recv() const{
         return receiver;
     }
-    std::string get_content() const {
+    const std::string& get_content() const {
         return content;
     }
-    std ::string get_timestamp() const {
+    const std::string& get_timestamp() const {
         return timestamp;
     }
     // 序列化消息为字符串
@@ -65,10 +65,18 @@ struct Message {
         std::getline(iss, Time);
     
         t = std::stoi(type);
+        /*
+        //输出
+        std::cout << "type: " << type << std::endl;
+        std::cout << "sender: " << s << std::endl;
+        std::cout << "receiver: " << r << std::endl;
+        std::cout << "content: " << c << std::endl;
+        std::cout << "timestamp: " << Time << std::endl;
+        */
         return Message(static_cast<MessageType>(t), s, r, c); // 注意构造函数的参数顺序
     }
 
-private:
+
     MessageType type;      // 消息类型
     std::string sender;    // 发送者用户名
     std::string receiver;  // 接收者用户名 ()
