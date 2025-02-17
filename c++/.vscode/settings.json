@@ -63,7 +63,11 @@
         "fstream": "cpp",
         "list": "cpp",
         "cstring": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "bitset": "cpp",
+        "regex": "cpp",
+        "source_location": "cpp",
+        "cinttypes": "cpp"
     },
     "Codegeex.RepoIndex": true
 }

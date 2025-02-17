@@ -65,7 +65,7 @@ struct Message {
         std::getline(iss, Time);
     
         t = std::stoi(type);
-        return Message(static_cast<MessageType>(t),  s, r, c); // 注意构造函数的参数顺序
+        return Message(static_cast<MessageType>(t), s, r, c); // 注意构造函数的参数顺序
     }
 
 private:
