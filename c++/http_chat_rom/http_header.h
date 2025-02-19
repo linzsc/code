@@ -1,95 +1,151 @@
-#include <cstdint>
+#ifndef HTTP_HEADER_H
+#define HTTP_HEADER_H
+
+#include <sstream>
 #include <string>
-#include <cstdio>
-#include <cstring>
-#include <stdexcept>
-#include <endian.h>
-
-// 协议头结构（固定长度）
-struct ProtocolHeader {
-
-
-    // 魔数定义
-    static const uint32_t MAGIC = 0x12345678;
-    
-    // 消息类型定义
-    enum MsgType : uint16_t {
-        HTTP_REQUEST = 1,      // HTTP 请求
-        CHAT_MESSAGE ,      // 聊天消息
-        LOGIN  ,             // 登录
-        REGISTER ,           // 注册
-        LOGOUT,              // 下线
-
-
-        HTTP_RESPONSE = 100,   // HTTP 响应
-        CHAT_RESPONSE,         // 聊天消息响应
-        LOGIN_RESPONSE,        // 登录响应
-        REGISTER_RESPONSE,     // 注册响应
-        LOGOUT_RESPONSE,       // 下线响应
-    };
-
-    // 构造函数
-    ProtocolHeader() : magic(MAGIC), version(1), msg_type(0), body_len(0) {}
-
-    // 设置消息类型
-    void setMessageType(MsgType type) {
-        msg_type = static_cast<uint16_t>(type);
-    }
-
-    // 设置 Body 数据长度
-    void setBodyLength(uint32_t len) {
-        body_len = len;
-    }
-
-    // 序列化为字节流
-    std::string serialize() const {
-        // 将结构体数据打包成字节流
-        char buffer[sizeof(ProtocolHeader)];
-        memcpy(buffer, &magic, sizeof(magic));
-        memcpy(buffer + sizeof(magic), &version, sizeof(version));
-        memcpy(buffer + sizeof(magic) + sizeof(version), &msg_type, sizeof(msg_type));
-        memcpy(buffer + sizeof(magic) + sizeof(version) + sizeof(msg_type), &body_len, sizeof(body_len));
-        //printf("http_head_buffer:  %s\n",buffer);
-        return std::string(buffer,sizeof(buffer));
-    }
-
-    // 从字节流中反序列化
-    static ProtocolHeader deserialize(const std::string& data) {
-        if (data.size() < sizeof(ProtocolHeader)) {
-            throw std::invalid_argument("Invalid data size for ProtocolHeader");
-        }
-
-        ProtocolHeader header;
-        const char* ptr = data.data();
-
-        // 解包数据
-        memcpy(&header.magic, ptr, sizeof(header.magic));
-        ptr += sizeof(header.magic);
-        memcpy(&header.version, ptr, sizeof(header.version));
-        ptr += sizeof(header.version);
-        memcpy(&header.msg_type, ptr, sizeof(header.msg_type));
-        ptr += sizeof(header.msg_type);
-        memcpy(&header.body_len, ptr, sizeof(header.body_len));
-
-        // 验证魔数
-        if (header.magic != MAGIC) {
-            throw std::runtime_error("Invalid magic number in ProtocolHeader");
-        }
-
-        return header;
-    }
-
-    // 打印协议头信息
-    void print() const {
-        std::printf("ProtocolHeader:\n");
-        std::printf("  Magic:      0x%X\n", magic);
-        std::printf("  Version:    %d\n", version);
-        std::printf("  Msg Type:   %d\n", msg_type);
-        std::printf("  Body Len:   %d\n", body_len);
-    }
-    
-    uint32_t magic;      // 魔数（标识协议）
-    uint16_t version;    // 协议版本
-    uint16_t msg_type;   // 消息类型
-    uint32_t body_len;   // Body 数据长度（单位：字节）
+#include <regex>
+#include <map>
+#include <unordered_map>
+enum class HttpStatus {
+    OK = 200,
+    NOT_FOUND = 404,
+    SWITCHING_PROTOCOLS = 101,
 };
+
+enum class HttpMethod {
+    UNKNOWN = -1,
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    HEAD,
+    OPTIONS,
+    PATCH,
+    TRACE,
+    CONNECT,
+};
+
+struct HttpRequest {
+    HttpMethod method;
+    std::string path;
+    std::string http_version;
+    std::map<std::string, std::string> headers;
+    std::string body;
+};
+
+struct HttpResponse {
+    HttpStatus status;
+    std::string http_version;
+    std::map<std::string, std::string> headers;
+    std::string body;
+};
+
+class HttpParser {
+public:
+    static HttpRequest parseHttpRequest(const std::string& request) {
+        HttpRequest httpRequest;
+        size_t end_header = request.find("\r\n\r\n");
+        
+        if (end_header != std::string::npos) {
+            std::string request_line = request.substr(0, request.find("\r\n"));
+            std::string headers_str = request.substr(request.find("\r\n") + 2, end_header - request.find("\r\n") - 2);
+            httpRequest.body = request.substr(end_header + 4);
+            
+            std::regex request_regex("^(GET|POST|PUT|DELETE|HEAD|OPTIONS|PATCH|TRACE|CONNECT) (\\S+) (HTTP/1\\.\\d)");
+            std::smatch match;
+            if (std::regex_search(request_line, match, request_regex)) {
+                httpRequest.method = strToHttpMethod(match[1]);
+                httpRequest.path = match[2];
+                httpRequest.http_version = match[3];
+            }
+            
+            size_t header_start = 0;
+            while (header_start < headers_str.size()) {
+                size_t header_end = headers_str.find("\r\n", header_start);
+                if (header_end == std::string::npos) break;
+                std::string header = headers_str.substr(header_start, header_end - header_start);
+                size_t colon_pos = header.find(": ");
+                if (colon_pos != std::string::npos) {
+                    httpRequest.headers[header.substr(0, colon_pos)] = header.substr(colon_pos + 2);
+                }
+                header_start = header_end + 2;
+            }
+        }
+        return httpRequest;
+    }
+    
+    static HttpResponse parseHttpResponse(const std::string& response) {
+        HttpResponse httpResponse;
+        size_t end_header = response.find("\r\n\r\n");
+        
+        if (end_header != std::string::npos) {
+            std::string status_line = response.substr(0, response.find("\r\n"));
+            std::string headers_str = response.substr(response.find("\r\n") + 2, end_header - response.find("\r\n") - 2);
+            httpResponse.body = response.substr(end_header + 4);
+            
+            std::regex status_regex("^(HTTP/1\\.\\d) (\\d{3})");
+            std::smatch match;
+            if (std::regex_search(status_line, match, status_regex)) {
+                httpResponse.http_version = match[1];
+                httpResponse.status = static_cast<HttpStatus>(std::stoi(match[2]));
+            }
+            
+            size_t header_start = 0;
+            while (header_start < headers_str.size()) {
+                size_t header_end = headers_str.find("\r\n", header_start);
+                if (header_end == std::string::npos) break;
+                std::string header = headers_str.substr(header_start, header_end - header_start);
+                size_t colon_pos = header.find(": ");
+                if (colon_pos != std::string::npos) {
+                    httpResponse.headers[header.substr(0, colon_pos)] = header.substr(colon_pos + 2);
+                }
+                header_start = header_end + 2;
+            }
+        }
+        return httpResponse;
+    }
+    
+    static std::string createHttpResponse(HttpStatus status, const std::string& content_type, const std::string& body) {
+        std::ostringstream response_stream;
+        response_stream << "HTTP/1.1 " << static_cast<int>(status) << " \r\n";
+        response_stream << "Content-Type: " << content_type << "\r\n";
+        response_stream << "Content-Length: " << body.length() << "\r\n\r\n";
+        response_stream << body;
+        return response_stream.str();
+    }
+    
+    static void printHttpRequest(const HttpRequest& request) {
+        std::cout << "HTTP Request:\n";
+        std::cout << "Method: " << static_cast<int>(request.method) << "\n";
+        std::cout << "Path: " << request.path << "\n";
+        std::cout << "Version: " << request.http_version << "\n";
+        std::cout << "Headers:\n";
+        for (const auto& header : request.headers) {
+            std::cout << "  " << header.first << ": " << header.second << "\n";
+        }
+        std::cout << "Body:\n" << request.body << "\n";
+    }
+
+    static void printHttpResponse(const HttpResponse& response) {
+        std::cout << "HTTP Response:\n";
+        std::cout << "Version: " << response.http_version << "\n";
+        std::cout << "Status: " << static_cast<int>(response.status) << "\n";
+        std::cout << "Headers:\n";
+        for (const auto& header : response.headers) {
+            std::cout << "  " << header.first << ": " << header.second << "\n";
+        }
+        std::cout << "Body:\n" << response.body << "\n";
+    }
+private:
+    static HttpMethod strToHttpMethod(const std::string& method) {
+        static const std::unordered_map<std::string, HttpMethod> method_map = {
+            {"GET", HttpMethod::GET}, {"POST", HttpMethod::POST}, {"PUT", HttpMethod::PUT},
+            {"DELETE", HttpMethod::DELETE}, {"HEAD", HttpMethod::HEAD}, {"OPTIONS", HttpMethod::OPTIONS},
+            {"PATCH", HttpMethod::PATCH}, {"TRACE", HttpMethod::TRACE}, {"CONNECT", HttpMethod::CONNECT}
+        };
+        auto it = method_map.find(method);
+        return it != method_map.end() ? it->second : HttpMethod::UNKNOWN;
+    }
+};
+
+#endif // HTTP_HEADER_H

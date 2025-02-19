@@ -76,7 +76,7 @@ struct Message {
         return Message(static_cast<MessageType>(t), s, r, c); // 注意构造函数的参数顺序
     }
 
-
+private:
     MessageType type;      // 消息类型
     std::string sender;    // 发送者用户名
     std::string receiver;  // 接收者用户名 ()

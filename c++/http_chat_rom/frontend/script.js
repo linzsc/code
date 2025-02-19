@@ -1,10 +1,10 @@
 let websocket;
 let isConnected = false;
-const CHAT_SERVER_URL = 'ws://localhost:12345';
+const CHAT_SERVER_URL = 'ws://http://127.0.0.1:12345';
 
 // 发送HTTP请求
 function sendHttpRequest(method, path, data) {
-    return fetch(`http://localhost:12345${path}`, {
+    return fetch(`http://127.0.0.1:12345${path}`, {
         method,
         headers: {
             'Content-Type': 'application/json'
@@ -22,6 +22,8 @@ async function registerUser() {
         username,
         password
     });
+    
+    console.log(response);
 
     const result = await response.json();
     console.log(result);

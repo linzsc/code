@@ -22,7 +22,7 @@
 //解析http响应
 
 
-
+/*
 void receive_data(int clientSocket) {
     char buffer[4096];
     ProtocolHeader header;
@@ -79,6 +79,7 @@ void receive_data(int clientSocket) {
 }
 
 
+*/
 void sendHttpRequest(int cfd, const std::string& method, const std::string& path, const std::string& body) {
     std::ostringstream oss;
     oss << method << " " << path << " HTTP/1.1\r\n";
@@ -164,17 +165,17 @@ void start_client() {
 
     std::cout << "成功连接到服务器!" << std::endl;
 
-    std::thread recvThread(receive_data, clientSocket);
+    //std::thread recvThread(receive_data, clientSocket);
     std::thread sendThread(send_data, clientSocket);
 
-    user_regist(clientSocket);
-    user_login(clientSocket);
+    //user_regist(clientSocket);
+    //user_login(clientSocket);
     //send_name(clientSocket);
     
     
 
     sendThread.join();
-    recvThread.detach();
+   // recvThread.detach();
     
     close(clientSocket);
 }
