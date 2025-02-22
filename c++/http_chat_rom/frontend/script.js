@@ -75,18 +75,18 @@ function sendMessage() {
 
     // 创建消息对象
     const msg = {
-        type: '1', // 消息类型，可以扩展为 'private' 等
+        type: '1', // 消息类型，GroupChat：1,可以扩展为 'PrivateChat':2
         sender: clinet_name, // 发送者用户名，确保 username 已定义
         content: message,
         timestamp: Date.now()
     };
-
+    console.log(msg);
     // 构建非 JSON 格式的消息字符串
-    const serializedMsg = `\r\n\r\n${msg.type}|${msg.sender}|${msg.content}|${msg.timestamp}\r\n\r\n`;
+    //const serializedMsg = `${msg.type}|${msg.sender}|${msg.content}|${msg.timestamp}`;
 
     // 发送消息
     if (websocket && websocket.readyState === WebSocket.OPEN) {
-        websocket.send(serializedMsg);
+        websocket.send(JSON.stringify(msg));
         messageInput.value = '';
     } else {
         alert('WebSocket connection is not open. Please reconnect.');

@@ -25,7 +25,7 @@ struct ClientContext {
     int buffer_pos;
     bool is_websocket; // 标识是否是WebSocket连接
     bool is_logged_in; // 标识是否已登录
-
+    std::string ws_fragment_buffer;
     ClientContext() : buffer_pos(0), is_websocket(false) {}
 };
 
@@ -153,17 +153,53 @@ void user_login(int fd, std::string ctx_body)
     }
 }
 
-// 处理 WebSocket 消息
-void handleWebSocketMessage(int fd, std::string message) {//广播消息
-    
+void senWebSocketMessage(int fd, std::string &payload) {
+    std::cout << "Sending WebSocket message: " << payload << std::endl;
+    unsigned char frame[1024]; // 临时缓冲区
+    size_t frame_len = 0;
+
+    // 写入帧头
+    frame[frame_len++] = 0x81; // text frame, fin=1
+
+    // 处理负载长度
+    size_t payload_len = payload.size();
+    if (payload_len < 126) {
+        frame[frame_len++] = (unsigned char) payload_len;
+    } else if (payload_len < 65536) {
+        frame[frame_len++] = 126;
+        frame[frame_len++] = (payload_len >> 8) & 0xFF;
+        frame[frame_len++] = payload_len & 0xFF;
+    } else {
+        frame[frame_len++] = 127;
+        // 处理 64 位长度，这里简化
+        for (int i = 0; i < 8; ++i) {
+            frame[frame_len++] = (payload_len >> (56 - i * 8)) & 0xFF;
+        }
+    }
+
+    // 服务器发送的帧不需要加掩码，所以 mask=0
+    frame[1] &= 0x7F; // 确保 mask=0
+
+    // 添加 payload
+    memcpy(frame + frame_len, payload.data(), payload.size());
+    frame_len += payload.size();
+
+    // 发送帧
+    std::cout << "Sending WebSocket frame with length: " << frame_len << std::endl;
+    send(fd, frame, frame_len, 0);
+}
+//广播消息
+void handleWebSocketMessage(int fd, std::string message) {
     std::cout << "Received WebSocket message: " << message << std::endl;
     // 广播消息
     for (auto it = online_fd.begin(); it != online_fd.end(); ++it) {
         int client_fd = it->first;
         //if (client_fd != fd) {
+        //std::cout<<"Sending message to "<<online_fd[client_fd]<<std::endl;
+        //send(client_fd, message.c_str(), message.length(), 0);
         std::cout<<"Sending message to "<<online_fd[client_fd]<<std::endl;
-        send(client_fd, message.c_str(), message.length(), 0);
-        //}
+        senWebSocketMessage(fd, message);
+       
     }
 }
 void handle_options_request(int clientSocket) {
@@ -245,7 +281,7 @@ char *compute_sec_websocket_accept(const char *sec_websocket_key) {
 
     return strdup(encoded);  // 返回动态分配的字符串，调用者负责释放
 }
-void onCtx_body(int fd, std::string message) {
+void onHttp_request(int fd, std::string message) {
     ClientContext &ctx = client_contexts[fd];
     ctx.buffer[ctx.buffer_pos] = '\0'; // Ensure null-terminated string
     size_t end_header = message.find("\r\n\r\n");
@@ -261,7 +297,7 @@ void onCtx_body(int fd, std::string message) {
             std::string path = request.path;
             HttpMethod method = request.method;
 
-            if (method == HttpMethod::GET ||request.headers["Upgrade"]== "websocket") {
+            if (request.headers["Upgrade"]== "websocket") {
                 std::cout<<"Upgrade request"<<std::endl;
                 // WebSocket 升级请求
                 std::string key = request.headers["Sec-WebSocket-Key"];
@@ -292,8 +328,8 @@ void onCtx_body(int fd, std::string message) {
                     handle_options_request(fd);
                 } else {
                     user_login(fd, body);
-                    std::cout<<"fd: "<<fd<<"close"<<std::endl;
-                    close(fd);
+                    //std::cout<<"fd: "<<fd<<"close"<<std::endl;
+                    //close(fd);
                 }
                 //user_login(fd, body);
             } else if (path.find("/register") == 0) {
@@ -382,72 +418,177 @@ void onCtx_body(int fd, std::string message) {
 }
 */
 
-void handleClientRead(int fd, uint32_t events) {
-    if (client_contexts.find(fd) == client_contexts.end()) {
+void handleClientRead(int fd, uint32_t events)
+{
+    if (client_contexts.find(fd) == client_contexts.end())
+    {
         client_contexts[fd] = ClientContext();
     }
-    
+
     ClientContext &ctx = client_contexts[fd];
     char chunk[4096];
     ssize_t bytesRead;
-    
-    while ((bytesRead = read(fd, chunk, sizeof(chunk))) > 0) {
-        ctx.buffer.append(chunk, bytesRead);  // 追加数据到缓冲区
-        std::cout<<"FD  : "<<fd<<"   read data: \n"<<ctx.buffer<<std::endl<<"-----------------"<<std::endl;
-        while (!ctx.buffer.empty()) {
-            if (!ctx.is_websocket) {
+
+    while ((bytesRead = read(fd, chunk, sizeof(chunk))) > 0)
+    {
+        ctx.buffer.append(chunk, bytesRead); // 追加数据到缓冲区
+        std::cout << "FD  : " << fd << "   read data: \n"
+                  << ctx.buffer << std::endl
+                  << "-----------------" << std::endl;
+        while (!ctx.buffer.empty())
+        {
+            if (!ctx.is_websocket)
+            {
                 // 处理 HTTP 请求
                 size_t end_header = ctx.buffer.find("\r\n\r\n");
-                if (end_header == std::string::npos) {
-                    break;  // 还没接收完整 HTTP 头部
+                if (end_header == std::string::npos)
+                {
+                    break; // 还没接收完整 HTTP 头部
                 }
 
                 std::string header = ctx.buffer.substr(0, end_header + 4);
                 size_t content_length_pos = header.find("Content-Length: ");
                 size_t content_length = 0;
-                if (content_length_pos != std::string::npos) {
+                if (content_length_pos != std::string::npos)
+                {
                     content_length = std::stoi(header.substr(content_length_pos + 16));
                 }
-                
+
                 size_t total_size = end_header + 4 + content_length;
-                if (ctx.buffer.size() < total_size) {
+                if (ctx.buffer.size() < total_size)
+                {
                     break; // HTTP 请求数据还未完全到达
                 }
-                
+
                 std::string full_request = ctx.buffer.substr(0, total_size);
                 ctx.buffer.erase(0, total_size); // 清理已处理部分
-                
-                onCtx_body(fd, full_request);
-            } else {
-               std::cout<<"ctx.is_websocket"<<"true"<<std::endl;
-               size_t begin_pos = ctx.buffer.find("\r\n\r\n");
-               begin_pos+=4;
 
+                onHttp_request(fd, full_request);
+            }
+            else
+            {
+
+                //目前只处理文本消息，且只有一帧数据
+                /*
+                // 处理websocket帧
+                while (true)
+                {
+                    if (ctx.buffer.size() < 2)
+                        break; // 不足以解析头部
+
+                    const unsigned char *data = reinterpret_cast<const unsigned char *>(ctx.buffer.data());
+                    unsigned char first_byte = data[0];
+                    unsigned char second_byte = data[1];
+
+                    bool fin = (first_byte & 0x80) != 0;
+                    int opcode = first_byte & 0x0F;
+                    bool mask = (second_byte & 0x80) != 0;
+                    uint64_t payload_len = second_byte & 0x7F;
+
+                    size_t header_size = 2;
+                    if (payload_len == 126)
+                    {
+                        header_size += 2;
+                        if (ctx.buffer.size() < header_size)
+                            break;
+                        uint16_t len;
+                        memcpy(&len, data + 2, 2);
+                        payload_len = ntohs(len);
+                    }
+                    else if (payload_len == 127)
+                    {
+                        header_size += 8;
+                        if (ctx.buffer.size() < header_size)
+                            break;
+                        uint64_t len;
+                        memcpy(&len, data + 2, 8);
+                        // 转换64位网络字节序到主机字节序
+                        payload_len = be64toh(len); // 使用自定义实现如果系统不支持be64toh
+                    }
+
+                    if (!mask)
+                    { // 客户端必须设置掩码
+                        close(fd);
+                        client_contexts.erase(fd);
+                        return;
+                    }
+
+                    header_size += 4; // 掩码键
+                    if (ctx.buffer.size() < header_size)
+                        break;
+
+                    const char *mask_key = reinterpret_cast<const char *>(data + header_size - 4);
+                    if (ctx.buffer.size() < header_size + payload_len)
+                        break;
+
+                    // 提取并解码负载
+                    std::string payload((data + header_size), payload_len);
+                    for (size_t i = 0; i < payload_len; ++i)
+                    {
+                        payload[i] ^= mask_key[i % 4];
+                    }
+
+                    // 处理操作码
+                    if (opcode == 0x1)
+                    { // 文本帧
+                        if (fin)
+                        {
+                            handleWebSocketMessage(fd, ctx.ws_fragment_buffer + payload);
+                            ctx.ws_fragment_buffer.clear();
+                        }
+                        else
+                        {
+                            ctx.ws_fragment_buffer += payload;
+                        }
+                    }
+                    else if (opcode == 0x0)
+                    { // 继续帧
+                        ctx.ws_fragment_buffer += payload;
+                        if (fin)
+                        {
+                            handleWebSocketMessage(fd, ctx.ws_fragment_buffer);
+                            ctx.ws_fragment_buffer.clear();
+                        }
+                    }
+                    else if (opcode == 0x8)
+                    { // 关闭帧
+                        close(fd);
+                        client_contexts.erase(fd);
+                        return;
+                    }
+                    else
+                    {
+                        // 其他帧类型暂不处理
+                    }
+
+                    // 移除已处理的数据
+                    ctx.buffer.erase(0, header_size + payload_len);
+                }
             
-               size_t end_pos = ctx.buffer.find("\r\n\r\n", begin_pos);
-               if (begin_pos == std::string::npos || end_pos == std::string::npos) {
-                   break; // WebSocket 消息未完整
-               }
-
-               std::string ws_message = ctx.buffer.substr(begin_pos, end_pos-begin_pos);
-               ctx.buffer.erase(0, end_pos+4); // 清理已处理部分
-               handleWebSocketMessage(fd, "\r\n\r\n"+ws_message+"\r\n\r\n");
+                }
+                */
+               handleWebSocketFrame(fd, ctx.buffer);
+               ctx.buffer.clear();
+               break;
             }
         }
     }
-    
-    if (bytesRead == 0) {
+
+    if (bytesRead == 0)
+    {
         std::cout << "Client disconnected." << std::endl;
-        std::cout<<"FD close!!"<<fd<<std::endl;
+        std::cout << "FD close!!" << fd << std::endl;
         client_contexts.erase(fd);
         close(fd);
-    } else if (bytesRead < 0 && errno != EAGAIN && errno != EWOULDBLOCK) {
+    }
+  
+    else if (bytesRead < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+    {
         std::cerr << "Read error: " << strerror(errno) << std::endl;
         client_contexts.erase(fd);
         close(fd);
     }
 }
-
 
 // 处理新连接
 void handleNewConnection(int fd, uint32_t events) {
@@ -465,11 +606,11 @@ void handleNewConnection(int fd, uint32_t events) {
     // 设置客户端连接为非阻塞
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
 
-    // 注册客户端文件描述符的读事件
+    // 注册客户端文件描述符的读事件,加入epoll反应堆
     server.addFd(client_fd, EPOLLIN | EPOLLET, handleClientRead);
 }
 
-// 处理标准输入
+// 处理标准输入,用于控制服务器
 void handleStdin(int fd, uint32_t events) {
     char buffer[512];
     ssize_t bytesRead = read(fd, buffer, sizeof(buffer) - 1);
