@@ -17,7 +17,7 @@
 #define PORT 12345
 
 // 定义回调函数类型
-typedef void (*CallbackFunction)(int fd, uint32_t events);
+
 
 // 定义客户端上下文
 struct ClientContext {
@@ -35,63 +35,6 @@ EpollReactor server;
 
 // 全局变量
 std::unordered_map<int, ClientContext> client_contexts;
-/*
-// 工具函数：生成WebSocket Sec-WebSocket-Accept 响应
-std::string generate_accept_key(const std::string& key) {
-    std::string guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    std::string combined = key + guid;
-
-    // 使用 OpenSSL 计算 SHA-1 哈希
-    unsigned char hash[SHA_DIGEST_LENGTH];
-    SHA1(reinterpret_cast<const unsigned char*>(combined.c_str()), combined.length(), hash);
-
-    // 使用 OpenSSL 进行 Base64 编码
-    EVP_ENCODE_CTX *ctx = EVP_ENCODE_CTX_new();
-    if (!ctx) {
-        return std::string(); // 分配失败
-    }
-
-    int out_len;
-    char *encoded = new char[EVP_ENCODE_LENGTH(SHA_DIGEST_LENGTH + 1)];
-    EVP_EncodeInit(ctx);
-    EVP_EncodeUpdate(ctx, reinterpret_cast<unsigned char*>(encoded), &out_len, hash, SHA_DIGEST_LENGTH);
-    EVP_EncodeFinal(ctx, reinterpret_cast<unsigned char*>(encoded + out_len), &out_len);
-    EVP_ENCODE_CTX_free(ctx);
-
-    std::string accept_key(encoded);
-    delete[] encoded;
-
-    // Base64 结果可能会包含等于号填充，需要处理
-    size_t pos = accept_key.find('=');
-    if (pos != std::string::npos) {
-        accept_key.erase(pos);
-    }
-
-    return accept_key;
-}
-*/
-/*
-std::string generate_accept_key_1(const std::string& secWebSocketKey) {
-    const std::string guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    std::string concatenated = secWebSocketKey + guid;
-
-    // 计算 SHA-1 哈希值
-    unsigned char hash[SHA_DIGEST_LENGTH];
-    SHA1(reinterpret_cast<const unsigned char*>(concatenated.c_str()), concatenated.size(), hash);
-
-    // 进行 Base64 编码
-    BIO* bio = BIO_new(BIO_s_mem());
-    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);  // 禁用换行符
-    BIO_write(bio, hash, sizeof(hash));
-    BIO_flush(bio);
-    char* base64;
-    long base64Len = BIO_get_mem_data(bio, &base64);
-    std::string base64Encoded(base64, base64Len);
-    BIO_free(bio);
-
-    return base64Encoded;
-}
-*/
 
 // 发送 HTTP 响应
 void sendHttpResponse(int fd, HttpStatus status_code,const std::map<std::string, std::string> &headers, const std::string& body) {
@@ -283,7 +226,7 @@ char *compute_sec_websocket_accept(const char *sec_websocket_key) {
 }
 void onHttp_request(int fd, std::string message) {
     ClientContext &ctx = client_contexts[fd];
-    ctx.buffer[ctx.buffer_pos] = '\0'; // Ensure null-terminated string
+    ctx.buffer[ctx.buffer_pos] = '\0'; 
     size_t end_header = message.find("\r\n\r\n");
     
     if (end_header != std::string::npos) {
@@ -301,17 +244,16 @@ void onHttp_request(int fd, std::string message) {
                 std::cout<<"Upgrade request"<<std::endl;
                 // WebSocket 升级请求
                 std::string key = request.headers["Sec-WebSocket-Key"];
-                //std::string accept = generate_accept_key(key); // 需要自己实现
+               
                 char *sec_websocket_accept = compute_sec_websocket_accept(key.c_str());
-                //std::cout<<"Sec-WebSocket-Accept_1: "<<accept<<std::endl;
                 std::cout<<"Sec-WebSocket-Accept_2: "<<sec_websocket_accept<<std::endl;
                 std::map<std::string, std::string> headers = {
                     {"Upgrade", "websocket"},
                     {"Connection", "Upgrade"},
-                    {"Sec-WebSocket-Accept",sec_websocket_accept }, // 需要自己实现
+                    {"Sec-WebSocket-Accept",sec_websocket_accept }, 
                 };
                 std::string resopns= HttpParser::createHttpRequestResponse_1(HttpStatus::SWITCHING_PROTOCOLS, sec_websocket_accept, "");
-                //sendHttpResponse(fd, HttpStatus::SWITCHING_PROTOCOLS, headers,"");
+                
                 std::cout << "Sending HTTP response: \n" << resopns << std::endl;
 
                 

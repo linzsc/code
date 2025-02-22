@@ -1,3 +1,11 @@
+#include <sys/epoll.h>
+#include <iostream>
+#include <map>
+#include <functional>
+#include <cstring>
+#define MAX_EVENTS 100
+typedef void (*CallbackFunction)(int fd, uint32_t events);
+
 class EpollReactor {
     public:
         EpollReactor() : epoll_fd(-1) {}

@@ -2,8 +2,8 @@
 #include <cstdlib>
 #include <iostream>
 #include <string.h>
-#include "sha1.h"  // 包含你提供的 SHA-1 实现
-#include "base64.h"  // 包含你提供的 Base64 编码实现
+#include "include/sha1.h"  // 包含你提供的 SHA-1 实现
+#include "include/base64.h"  // 包含你提供的 Base64 编码实现
 
 // WebSocket GUID
 static const char *ws_guid = "258EAFA5-69A2-4FC6-A914-279E4C974253";
@@ -25,13 +25,14 @@ char *compute_sec_websocket_accept(const char *sec_websocket_key) {
     return strdup(encoded);  // 返回动态分配的字符串，调用者负责释放
 }
 
-int main() {
+int main(int argc, char **argv) {
     // 示例：客户端提供的 Sec-WebSocket-Key
     //const char *sec_websocket_key = "G0qsTTVgel/mQ0tjqqdmKQ==";
-    
-    const char *sec_websocket_key = "wDqumtseNBJdhkihL6PW7w==";
-
-    // 计算 Sec-WebSocket-Accept
+    const char *sec_websocket_key ;
+    if(argc>1){
+        sec_websocket_key = argv[1];
+    }
+   
     char *sec_websocket_accept = compute_sec_websocket_accept(sec_websocket_key);
 
     // 输出结果
