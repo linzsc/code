@@ -40,14 +40,19 @@ struct Message {
     const std::string& get_timestamp() const {
         return timestamp;
     }
+    const MessageType& get_type() const {
+        return type;
+    }
     // 序列化消息为字符串
     std::string serialize() const {
         std::ostringstream oss;
-        oss << static_cast<int>(type) << "|"
+        oss << "\r\n\r\n"
+            << static_cast<int>(type) << "|"
             << sender << "|"
             << receiver << "|"
             << content << "|"
-            << timestamp;
+            << timestamp
+            <<"\r\n\r\n";
         return oss.str();
     }
 
@@ -56,23 +61,26 @@ struct Message {
         std::istringstream iss(data);
         int t;
         std::string s, r, c, type;
-    
+        //跳过前面的\r\n\r\n
+        std::string temp;
+        std::string Time;      // timestamp
+        //std::getline(iss, temp, '\n'); // 跳过第一个 \r\n
+        //std::getline(iss, temp, '\n'); // 跳过第二个 \r\n
         std::getline(iss, type, '|');  // type
         std::getline(iss, s, '|');  // sender
         std::getline(iss, r, '|');  // receiver
         std::getline(iss, c, '|'); // content
-        std::string Time;      // timestamp
         std::getline(iss, Time);
-    
+        //std::getline(iss, temp, '\n'); // 跳过最后一个 \r\n
+
         t = std::stoi(type);
-        /*
-        //输出
+       
         std::cout << "type: " << type << std::endl;
         std::cout << "sender: " << s << std::endl;
         std::cout << "receiver: " << r << std::endl;
         std::cout << "content: " << c << std::endl;
         std::cout << "timestamp: " << Time << std::endl;
-        */
+
         return Message(static_cast<MessageType>(t), s, r, c); // 注意构造函数的参数顺序
     }
 

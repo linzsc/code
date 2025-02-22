@@ -11,6 +11,11 @@ enum class HttpStatus {
     NOT_FOUND = 404,
     SWITCHING_PROTOCOLS = 101,
 };
+std::map<HttpStatus, std::string> status_phrase_map = {
+    {HttpStatus::OK, "OK"},
+    {HttpStatus::NOT_FOUND, "Not Found"},
+    {HttpStatus::SWITCHING_PROTOCOLS, "Switching Protocols"}
+};
 
 enum class HttpMethod {
     UNKNOWN = -1,
@@ -105,15 +110,72 @@ public:
         return httpResponse;
     }
     
+
+    //暂未使用
+    
+    static std::string createHttpRequest(const std::string& method, const std::string& path,  const std::map<std::string, std::string>& headers, const std::string& body) {
+        std::ostringstream request_stream;
+        request_stream << method << " " << path << " " << "HTTP/1.1" << "\r\n";
+        for (const auto& header : headers) {
+            request_stream << header.first << ": " << header.second << "\r\n";
+        }
+        request_stream << "\r\n\r\n" << body;
+        return request_stream.str();
+    }
+    static std::map<std::string, std::string> createDefaultHeaders(const std::string& body) {
+        std::map<std::string, std::string> headers;
+        headers["Access-Control-Allow-Origin"] = "*";
+        headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS";
+        headers["Access-Control-Allow-Headers"] = "*";
+        headers["Connection"]="keep-alive";
+        if(body.size()>0)
+            headers["Content-Length"] = std::to_string(body.length());
+        return headers;
+    }
+    
+    static std::string createHttpRequestResponse(HttpStatus status, const std::string& body, const std::map<std::string, std::string>& extraHeaders = {}) {
+        std::ostringstream response_stream;
+        response_stream << "HTTP/1.1 " << static_cast<int>(status) << " " << status_phrase_map.at(status)<< "\r\n";
+    
+        std::map<std::string, std::string> headers = createDefaultHeaders(body);
+
+        //添加和覆盖HttpHeaders
+        for (const auto& header : extraHeaders) {
+            headers[header.first] = header.second;
+        }
+    
+        for (const auto& header : headers) {
+            response_stream << header.first << ": " << header.second << "\r\n";
+        }
+    
+        response_stream << "\r\n" << body;
+        return response_stream.str();
+    }
+    static std::string createHttpRequestResponse_1(HttpStatus status,const std::string& Key,const std::string &body)
+    {
+        std::ostringstream response_stream;
+        response_stream << "HTTP/1.1" << " " << static_cast<int>(status) << " " << status_phrase_map.at(status) << "\r\n";
+        response_stream<< "Upgrade: websocket"<<"\r\n";
+        response_stream<< "Connection: Upgrade"<<"\r\n";
+        response_stream<< "Sec-WebSocket-Accept: "<<Key<<"\r\n";
+        
+        response_stream << "\r\n"<<body;
+        return response_stream.str();
+    }
+    /*
     static std::string createHttpResponse(HttpStatus status, const std::string& content_type, const std::string& body) {
         std::ostringstream response_stream;
         response_stream << "HTTP/1.1 " << static_cast<int>(status) << " \r\n";
         response_stream << "Content-Type: " << content_type << "\r\n";
+        response_stream << "Access-Control-Allow-Origin: *\r\n"
+                           "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n"
+                           "Access-Control-Allow-Headers: *\r\n";
+                           
         response_stream << "Content-Length: " << body.length() << "\r\n\r\n";
         response_stream << body;
         return response_stream.str();
     }
-    
+    */
     static void printHttpRequest(const HttpRequest& request) {
         std::cout << "HTTP Request:\n";
         std::cout << "Method: " << static_cast<int>(request.method) << "\n";
