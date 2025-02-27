@@ -13,7 +13,6 @@
 #include "http_header.h"
 #include "message.h"
 #include "simple_json.h"
-#define MAX_EVENTS 10
 #define PORT 12345
 #define BUFF_SIZE 1024
 
@@ -52,4 +51,4 @@ struct ClientContext {
 
 */
 
-ThreadPool& thread_pool = ThreadPool::instance(200);  // 使用线程池
+ThreadPool& thread_pool = ThreadPool::instance(std::thread::hardware_concurrency() * 20 );  // 使用线程池

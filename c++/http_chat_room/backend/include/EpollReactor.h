@@ -3,7 +3,8 @@
 #include <map>
 #include <functional>
 #include <cstring>
-#define MAX_EVENTS 100
+#include "thread_poor.h"
+#define MAX_EVENTS 1000
 typedef void (*CallbackFunction)(int fd, uint32_t events);
 
 class EpollReactor {
@@ -30,7 +31,14 @@ class EpollReactor {
                 std::cerr << "Failed to add fd to epoll: " << strerror(errno) << std::endl;
             }
         }
-    
+        void modFd(int fd, uint32_t events) {
+            struct epoll_event ev;
+            ev.events = events;
+            ev.data.fd = fd;
+            if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+                std::cerr << "Failed to mod fd: " << strerror(errno) << std::endl;
+            }
+        }
         // 事件循环
         void run() {
             struct epoll_event events[MAX_EVENTS];
@@ -46,10 +54,19 @@ class EpollReactor {
                 for (int i = 0; i < nfds; ++i) {
                     int fd = events[i].data.fd;
                     uint32_t event = events[i].events;
-    
+                    /*
+                    if (fd_callbacks.find(fd) != fd_callbacks.end()) {
+                        // 将回调函数提交到线程池
+                        ThreadPool::instance().commit([fd,event,this]() {
+                            fd_callbacks[fd](fd, event);
+                        });
+                    }
+                    */
+                    
                     if (fd_callbacks.find(fd) != fd_callbacks.end()) {
                         fd_callbacks[fd](fd, event);  // 调用注册的回调函数
                     }
+                    
                 }
             }
         }

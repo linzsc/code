@@ -127,7 +127,7 @@ public:
         headers["Access-Control-Allow-Origin"] = "*";
         headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS";
         headers["Access-Control-Allow-Headers"] = "*";
-        headers["Connection"]="keep-alive";
+        headers["Connection"]="close";
         if(body.size()>0)
             headers["Content-Length"] = std::to_string(body.length());
         return headers;

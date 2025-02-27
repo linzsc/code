@@ -75,7 +75,8 @@
         "complex": "cpp",
         "shared_mutex": "cpp",
         "stdfloat": "cpp",
-        "typeindex": "cpp"
+        "typeindex": "cpp",
+        "set": "cpp"
     },
     "Codegeex.RepoIndex": true
 }

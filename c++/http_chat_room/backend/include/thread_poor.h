@@ -15,13 +15,8 @@ class ThreadPool  {
 public:
     ThreadPool(const ThreadPool&) = delete;
     ThreadPool& operator=(const ThreadPool&) = delete;
-    /*
-    static ThreadPool& instance() {
-        static ThreadPool ins;
-        return ins;
-    }
-    */
-     static ThreadPool& instance(int num) {
+
+     static ThreadPool& instance(int num=200) {
         static ThreadPool ins(num);
         return ins;
     }
@@ -33,25 +28,6 @@ public:
     ~ThreadPool() {
         stop();
     }
-    /*
-    template <class F, class... Args>
-    auto commit(F&& f, Args&&... args) -> std::future<decltype(f(args...))> {
-        using RetType = decltype(f(args...));
-        if (stop_.load())
-            return std::future<RetType>{};
-
-        auto task = std::make_shared<std::packaged_task<RetType()>>(
-            bind(std::forward<F>(f), std::forward<Args>(args)...));
-
-        std::future<RetType> ret = task->get_future();
-        {
-            std::lock_guard<std::mutex> cv_mt(cv_mt_);
-            tasks_.emplace([task] { (*task)(); });
-        }
-        cv_lock_.notify_one();
-        return ret;
-    }
-    */
     template <class F, class... Args>
     auto commit(F&& f, Args&&... args) -> std::future<decltype(f(args...))> {
         using RetType = decltype(f(args...));

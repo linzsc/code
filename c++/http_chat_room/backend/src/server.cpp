@@ -3,6 +3,7 @@
 #include "http_header.h"
 #include "base64.h"
 #include "sha1.h"
+#include "logger.h"
 /*
 前端先发送 注册、登录http请求，
 但后端核实身份信息后，返回成功的响应
@@ -39,7 +40,7 @@ std::unordered_map<int, ClientContext> client_contexts;
 // 发送 HTTP 响应
 void sendHttpResponse(int fd, HttpStatus status_code,const std::map<std::string, std::string> &headers, const std::string& body) {
     std::string response = HttpParser::createHttpRequestResponse(status_code, body,headers);
-    std::cout << "Sending HTTP response: \n" << response << std::endl<<">>><<<<\n";
+    //std::cout << "Sending HTTP response: \n" << response << std::endl<<">>><<<<\n";
     send(fd, response.c_str(), response.length(), 0);
 }
 
@@ -224,9 +225,18 @@ char *compute_sec_websocket_accept(const char *sec_websocket_key) {
 
     return strdup(encoded);  // 返回动态分配的字符串，调用者负责释放
 }
+
+void handleAuthRequest(int fd, const std::string& path, HttpMethod method, const std::string& body) {
+    if (method == HttpMethod::OPTIONS) {
+        handle_options_request(fd);
+    } else if (path.find("/login") == 0) {
+        user_login(fd, body);
+    } else if (path.find("/register") == 0) {
+        user_register(fd, body);
+    }
+}
 void onHttp_request(int fd, std::string message) {
     ClientContext &ctx = client_contexts[fd];
-    ctx.buffer[ctx.buffer_pos] = '\0'; 
     size_t end_header = message.find("\r\n\r\n");
     
     if (end_header != std::string::npos) {
@@ -236,54 +246,46 @@ void onHttp_request(int fd, std::string message) {
         if (!ctx.is_websocket) {
             // 解析 HTTP 请求
             HttpRequest request = HttpParser::parseHttpRequest(message);
-            //HttpParser::printHttpRequest(request); // 打印 HTTP 请求
             std::string path = request.path;
             HttpMethod method = request.method;
 
-            if (request.headers["Upgrade"]== "websocket") {
-                std::cout<<"Upgrade request"<<std::endl;
+            if (request.headers["Upgrade"] == "websocket") {
+                std::cout << "Upgrade request" << std::endl;
                 // WebSocket 升级请求
                 std::string key = request.headers["Sec-WebSocket-Key"];
-               
-                char *sec_websocket_accept = compute_sec_websocket_accept(key.c_str());
-                std::cout<<"Sec-WebSocket-Accept_2: "<<sec_websocket_accept<<std::endl;
+                std::string sec_websocket_accept = compute_sec_websocket_accept(key.c_str());
+                if (sec_websocket_accept.empty()) {
+                    std::cerr << "Failed to compute Sec-WebSocket-Accept" << std::endl;
+                    close(fd);
+                    return;
+                }
+
                 std::map<std::string, std::string> headers = {
                     {"Upgrade", "websocket"},
                     {"Connection", "Upgrade"},
-                    {"Sec-WebSocket-Accept",sec_websocket_accept }, 
+                    {"Sec-WebSocket-Accept", sec_websocket_accept},
                 };
-                std::string resopns= HttpParser::createHttpRequestResponse_1(HttpStatus::SWITCHING_PROTOCOLS, sec_websocket_accept, "");
-                
-                std::cout << "Sending HTTP response: \n" << resopns << std::endl;
+                std::string response = HttpParser::createHttpRequestResponse_1(HttpStatus::SWITCHING_PROTOCOLS, sec_websocket_accept, "");
 
+                //std::cout << "Sending HTTP response: \n" << response << std::endl;
+
+                if (send(fd, response.c_str(), response.size(), 0) == -1) {
+                    std::cerr << "Send failed: " << strerror(errno) << std::endl;
+                    close(fd);
+                    return;
+                }
+                ctx.is_websocket = true;
+            } else if(path == "/register"|| path == "/login"){
+                handleAuthRequest(fd, path, method, body);
+            }else{
                 
-                if(send(fd, resopns.c_str(), resopns.size(), 0)){
-                    std::cout<<"fd: "<<fd<<" upgrade!!!! \n";
-                    ctx.is_websocket = true;
-                }
-                else{
-                    std::cout<<"Failed\n";
-                }
-            } else if (path.find("/login") == 0) {
-                // 登录请求 
-                if (method == HttpMethod::OPTIONS) {
-                    handle_options_request(fd);
-                } else {
-                    user_login(fd, body);
-                    //std::cout<<"fd: "<<fd<<"close"<<std::endl;
-                    //close(fd);
-                }
-                //user_login(fd, body);
-            } else if (path.find("/register") == 0) {
-                // 注册请求
-                if (method == HttpMethod::OPTIONS) {
-                    handle_options_request(fd);
-                } else {
-                    user_register(fd, body);
-                }
+                sendHttpResponse(fd,  HttpStatus::OK, {}, "Unauthorized");
+            }
+
+            if (request.headers["Connection"] != "keep-alive") {
+                close(fd); // 非保持连接，直接关闭 fd
             } else {
-                std::map<std::string, std::string> extraHeaders = {{"Content-Type", "text/html"}};
-                sendHttpResponse(fd, HttpStatus::NOT_FOUND, extraHeaders, "Not Found");
+                server.modFd(fd, EPOLLIN | EPOLLET); // 保持连接，重置 epoll 监听事件
             }
         } else {
             // WebSocket 消息处理
@@ -293,73 +295,9 @@ void onHttp_request(int fd, std::string message) {
     }
 }
 
-/*
-void onCtx_body(int fd, std::string message) {
-    ClientContext &ctx = client_contexts[fd];
-    ctx.buffer[ctx.buffer_pos] = '\0'; // Ensure null-terminated string
-    std::cout<<"Received message: \n"<<message<<std::endl;
-    if (!ctx.is_websocket) {
 
-        HttpRequest request=HttpParser::parseHttpRequest(message);
-        // 处理 HTTP 请求
-        size_t end_header = message.find("\r\n\r\n");
-        if (end_header != std::string::npos) {
-            std::string request_line = message.substr(0, end_header);
-            std::regex request_regex("^(GET|POST|OPTIONS) (\\S+) HTTP/1\\.1");
-            std::smatch match;
-            if (std::regex_search(request_line, match, request_regex)) {
-                std::string method = match[1];
-                std::string path = match[2];
-                std::string body = message.substr(end_header + 4, message.length() - (end_header + 4));
-                
-                if (path.find("/ws") == 0) {
-                    // WebSocket 升级请求
-                    std::regex accept_regex("Sec-WebSocket-Key: (\\S+)");
-                    std::smatch accept_match;
-                    std::string key;
-                    if (std::regex_search(body, accept_match, accept_regex)) {
-                        key = accept_match[1];
-                    }
-                    //std::string accept = generate_accept_key(key);
 
-                    
-                    sendHttpResponse(fd, HttpStatus::OK, "text/html", "WebSocket connection established");
-                    ctx.is_websocket = true;
-                } else if (path.find("/login") == 0) {
-                    // 登录请求 
-                    if(method == "OPTIONS"){
-
-                        handle_options_request(fd);
-                    }
-                    else{
-                        user_login(fd, body);
-                    }
-                    user_login(fd, body);
-                    //ctx.is_websocket = true;
-                } else if (path.find("/register") == 0) {
-                    // 注册请求
-                    if(method == "OPTIONS"){
-                        handle_options_request(fd);
-                    }else{
-                        user_register(fd, body);
-                    }
-                    
-                } else {
-                    sendHttpResponse(fd, HttpStatus::NOT_FOUND, "text/html", "Not Found");
-                }
-            } else {
-                sendHttpResponse(fd, HttpStatus::NOT_FOUND, "text/html", "Bad Request");
-            }
-            ctx.buffer_pos = 0; // 清空缓冲区
-        }
-    } else {
-        // 处理 WebSocket 消息
-        handleWebSocketMessage(fd, message);
-        
-    }
-}
-*/
-
+\
 void handleClientRead(int fd, uint32_t events)
 {
     if (client_contexts.find(fd) == client_contexts.end())
@@ -374,9 +312,11 @@ void handleClientRead(int fd, uint32_t events)
     while ((bytesRead = read(fd, chunk, sizeof(chunk))) > 0)
     {
         ctx.buffer.append(chunk, bytesRead); // 追加数据到缓冲区
+        /*
         std::cout << "FD  : " << fd << "   read data: \n"
                   << ctx.buffer << std::endl
                   << "-----------------" << std::endl;
+        */
         while (!ctx.buffer.empty())
         {
             if (!ctx.is_websocket)
@@ -404,111 +344,16 @@ void handleClientRead(int fd, uint32_t events)
 
                 std::string full_request = ctx.buffer.substr(0, total_size);
                 ctx.buffer.erase(0, total_size); // 清理已处理部分
-
-                onHttp_request(fd, full_request);
+                
+                ThreadPool::instance().commit([fd, full_request]() {
+                    onHttp_request(fd, full_request);
+                });
+                
+               
             }
             else
             {
 
-                //目前只处理文本消息，且只有一帧数据
-                /*
-                // 处理websocket帧
-                while (true)
-                {
-                    if (ctx.buffer.size() < 2)
-                        break; // 不足以解析头部
-
-                    const unsigned char *data = reinterpret_cast<const unsigned char *>(ctx.buffer.data());
-                    unsigned char first_byte = data[0];
-                    unsigned char second_byte = data[1];
-
-                    bool fin = (first_byte & 0x80) != 0;
-                    int opcode = first_byte & 0x0F;
-                    bool mask = (second_byte & 0x80) != 0;
-                    uint64_t payload_len = second_byte & 0x7F;
-
-                    size_t header_size = 2;
-                    if (payload_len == 126)
-                    {
-                        header_size += 2;
-                        if (ctx.buffer.size() < header_size)
-                            break;
-                        uint16_t len;
-                        memcpy(&len, data + 2, 2);
-                        payload_len = ntohs(len);
-                    }
-                    else if (payload_len == 127)
-                    {
-                        header_size += 8;
-                        if (ctx.buffer.size() < header_size)
-                            break;
-                        uint64_t len;
-                        memcpy(&len, data + 2, 8);
-                        // 转换64位网络字节序到主机字节序
-                        payload_len = be64toh(len); // 使用自定义实现如果系统不支持be64toh
-                    }
-
-                    if (!mask)
-                    { // 客户端必须设置掩码
-                        close(fd);
-                        client_contexts.erase(fd);
-                        return;
-                    }
-
-                    header_size += 4; // 掩码键
-                    if (ctx.buffer.size() < header_size)
-                        break;
-
-                    const char *mask_key = reinterpret_cast<const char *>(data + header_size - 4);
-                    if (ctx.buffer.size() < header_size + payload_len)
-                        break;
-
-                    // 提取并解码负载
-                    std::string payload((data + header_size), payload_len);
-                    for (size_t i = 0; i < payload_len; ++i)
-                    {
-                        payload[i] ^= mask_key[i % 4];
-                    }
-
-                    // 处理操作码
-                    if (opcode == 0x1)
-                    { // 文本帧
-                        if (fin)
-                        {
-                            handleWebSocketMessage(fd, ctx.ws_fragment_buffer + payload);
-                            ctx.ws_fragment_buffer.clear();
-                        }
-                        else
-                        {
-                            ctx.ws_fragment_buffer += payload;
-                        }
-                    }
-                    else if (opcode == 0x0)
-                    { // 继续帧
-                        ctx.ws_fragment_buffer += payload;
-                        if (fin)
-                        {
-                            handleWebSocketMessage(fd, ctx.ws_fragment_buffer);
-                            ctx.ws_fragment_buffer.clear();
-                        }
-                    }
-                    else if (opcode == 0x8)
-                    { // 关闭帧
-                        close(fd);
-                        client_contexts.erase(fd);
-                        return;
-                    }
-                    else
-                    {
-                        // 其他帧类型暂不处理
-                    }
-
-                    // 移除已处理的数据
-                    ctx.buffer.erase(0, header_size + payload_len);
-                }
-            
-                }
-                */
                handleWebSocketFrame(fd, ctx.buffer);
                ctx.buffer.clear();
                break;
@@ -527,6 +372,7 @@ void handleClientRead(int fd, uint32_t events)
     else if (bytesRead < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
     {
         std::cerr << "Read error: " << strerror(errno) << std::endl;
+       
         client_contexts.erase(fd);
         close(fd);
     }
@@ -577,14 +423,15 @@ int main() {
     // 创建监听套接字
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if (server_fd == -1) {
-        std::cerr << "Socket creation failed: " << strerror(errno) << std::endl;
+        LOG_ERROR("Socket创建失败");
+        //std::cerr << "Socket creation failed: " << strerror(errno) << std::endl;
         return 1;
     }
 
     // 设置 SO_REUSEADDR 选项，允许重用本地地址和端口
     int opt = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) == -1) {
-        std::cerr << "设置 SO_REUSEADDR 失败!" << std::endl;
+        LOG_ERROR("设置 SO_REUSEADDR 失败!");
         close(server_fd);
         return 0;
     }
@@ -592,20 +439,23 @@ int main() {
     // 设置服务器地址
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT); // 监听端口改为 8080
+    server_addr.sin_port = htons(PORT); 
     server_addr.sin_addr.s_addr = INADDR_ANY;
 
     // 绑定和监听
     if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-        std::cerr << "Bind failed: " << strerror(errno) << std::endl;
+        LOG_ERROR("绑定失败!");
+        //std::cerr << "Bind failed: " << strerror(errno) << std::endl;
         return 1;
     }
 
     if (listen(server_fd, 5) == -1) {
-        std::cerr << "Listen failed: " << strerror(errno) << std::endl;
+        LOG_ERROR("监听失败!");
+        //std::cerr << "Listen failed: " << strerror(errno) << std::endl;
         return 1;
     }
-    std::cout << "Server listening on port 12345" << std::endl;
+    LOG_INFO("Server listening on port:");
+    //std::cout << "Server listening on port 12345" << std::endl;
 
     // 设置服务器套接字为非阻塞
     fcntl(server_fd, F_SETFL, O_NONBLOCK);
